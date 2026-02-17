@@ -49,6 +49,26 @@ import {
   handlePublicDownloadAttachment,
 } from './handlers/attachments';
 
+function isSameOriginWriteRequest(request: Request): boolean {
+  const targetOrigin = new URL(request.url).origin;
+  const origin = request.headers.get('Origin');
+  if (origin) {
+    return origin === targetOrigin;
+  }
+
+  const referer = request.headers.get('Referer');
+  if (referer) {
+    try {
+      return new URL(referer).origin === targetOrigin;
+    } catch {
+      return false;
+    }
+  }
+
+  // Require browser-origin evidence for setup/register write operations.
+  return false;
+}
+
 function getNwIconSvg(): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="NW icon"><rect x="4" y="4" width="88" height="88" rx="20" fill="#111418"/><text x="48" y="60" text-anchor="middle" font-size="36" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-weight="800" letter-spacing="0.5" fill="#FFFFFF">NW</text></svg>`;
 }
@@ -63,19 +83,54 @@ function handleNwFavicon(): Response {
   });
 }
 
+function isValidIconHostname(hostname: string): boolean {
+  if (!hostname) return false;
+  if (hostname.length > 253) return false;
+
+  const normalized = hostname.toLowerCase();
+  const domainPattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+  const ipv4Pattern = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+
+  if (domainPattern.test(normalized)) return true;
+  if (!ipv4Pattern.test(normalized)) return false;
+
+  const parts = normalized.split('.');
+  return parts.every(p => {
+    const n = Number(p);
+    return Number.isInteger(n) && n >= 0 && n <= 255;
+  });
+}
+
 // Icons handler - proxy to Bitwarden's official icon service
 async function handleGetIcon(request: Request, env: Env, hostname: string): Promise<Response> {
   try {
+    void env;
+    const normalizedHostname = hostname.toLowerCase();
+    if (!isValidIconHostname(normalizedHostname)) {
+      return new Response(null, { status: 204 });
+    }
+
+    const cache = caches.default;
+    const cacheKey = new Request(`https://nodewarden-icons.local/icons/${normalizedHostname}/icon.png`, { method: 'GET' });
+    const cached = await cache.match(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     // Use Bitwarden's official icon service
-    const iconUrl = `https://icons.bitwarden.net/${hostname}/icon.png`;
+    const iconUrl = `https://icons.bitwarden.net/${normalizedHostname}/icon.png`;
     const resp = await fetch(iconUrl, {
       headers: { 'User-Agent': 'NodeWarden/1.0' },
       redirect: 'follow',
+      cf: {
+        cacheEverything: true,
+        cacheTtl: 604800,
+      },
     });
 
     if (resp.ok) {
       const body = await resp.arrayBuffer();
-      return new Response(body, {
+      const iconResponse = new Response(body, {
         status: 200,
         headers: {
           'Content-Type': resp.headers.get('Content-Type') || 'image/png',
@@ -83,6 +138,8 @@ async function handleGetIcon(request: Request, env: Env, hostname: string): Prom
           'Access-Control-Allow-Origin': '*',
         },
       });
+      await cache.put(cacheKey, iconResponse.clone());
+      return iconResponse;
     }
 
     return new Response(null, { status: 204 });
@@ -116,6 +173,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     // Disable setup page (one-way)
     if (path === '/setup/disable' && method === 'POST') {
+      if (!isSameOriginWriteRequest(request)) {
+        return errorResponse('Forbidden origin', 403);
+      }
       return handleDisableSetup(request, env);
     }
 
@@ -222,6 +282,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     // Registration endpoint (no auth required, but only works once)
     if (path === '/api/accounts/register' && method === 'POST') {
+      if (!isSameOriginWriteRequest(request)) {
+        return errorResponse('Forbidden origin', 403);
+      }
       return handleRegister(request, env);
     }
 
@@ -247,7 +310,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     if (isWriteMethod) {
       const rateLimit = new RateLimitService(env.DB);
       const clientId = getClientIdentifier(request);
-      const rateLimitCheck = await rateLimit.checkApiRateLimit(userId + ':' + clientId + ':write');
+      const rateLimitCheck = await rateLimit.consumeApiWriteBudget(userId + ':' + clientId + ':write');
 
       if (!rateLimitCheck.allowed) {
         return new Response(JSON.stringify({
@@ -262,8 +325,6 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
           },
         });
       }
-
-      await rateLimit.incrementApiCount(userId + ':' + clientId + ':write');
     }
 
     // Block account operations that could change password or delete user

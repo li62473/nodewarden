@@ -649,8 +649,6 @@ function renderRegisterPageHTML(jwtState: JwtSecretState | null): string {
         creating: '正在创建…',
         doneTitle: '初始化完成',
         doneDesc: '服务已就绪。在 Bitwarden 客户端中填入以下服务器地址：',
-        important: '重要提示',
-        limitations: '本项目仅支持单用户：不能添加新用户；不支持修改主密码；如果忘记主密码，只能重新部署并重新注册。',
         hideTitle: '隐藏初始化页',
         hideDesc: '隐藏后，初始化页对任何人都会返回 404。你的密码库仍可正常使用。',
         hideBtn: '隐藏初始化页',
@@ -738,8 +736,6 @@ function renderRegisterPageHTML(jwtState: JwtSecretState | null): string {
         creating: 'Creating…',
         doneTitle: 'Setup complete',
         doneDesc: 'Your server is ready. Use this URL in Bitwarden clients:',
-        important: 'Important',
-        limitations: 'Single user only: no additional users, no master password change. If forgotten, redeploy and register again.',
         hideTitle: 'Hide setup page',
         hideDesc: 'After hiding, this page returns 404 for everyone. Vault still works.',
         hideBtn: 'Hide setup page',
@@ -843,8 +839,6 @@ function renderRegisterPageHTML(jwtState: JwtSecretState | null): string {
       setText('submitBtn', t('create'));
       setText('t_done_title', t('doneTitle'));
       setText('t_done_desc', t('doneDesc'));
-      setText('t_important', t('important'));
-      setText('t_limitations', t('limitations'));
       setText('t_hide_title', t('hideTitle'));
       setText('t_hide_desc', t('hideDesc'));
       setText('hideBtn', t('hideBtn'));

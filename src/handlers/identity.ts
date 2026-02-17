@@ -12,12 +12,15 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
 
   let body: Record<string, string>;
   const contentType = request.headers.get('content-type') || '';
-
-  if (contentType.includes('application/x-www-form-urlencoded')) {
-    const formData = await request.formData();
-    body = Object.fromEntries(formData.entries()) as Record<string, string>;
-  } else {
-    body = await request.json();
+  try {
+    if (contentType.includes('application/x-www-form-urlencoded')) {
+      const formData = await request.formData();
+      body = Object.fromEntries(formData.entries()) as Record<string, string>;
+    } else {
+      body = await request.json();
+    }
+  } catch {
+    return identityErrorResponse('Invalid request payload', 'invalid_request', 400);
   }
 
   const grantType = body.grant_type;
@@ -108,12 +111,12 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     // Refresh token
     const refreshToken = body.refresh_token;
     if (!refreshToken) {
-      return errorResponse('Refresh token is required', 400);
+      return identityErrorResponse('Refresh token is required', 'invalid_request', 400);
     }
 
     const result = await auth.refreshAccessToken(refreshToken);
     if (!result) {
-      return errorResponse('Invalid refresh token', 401);
+      return identityErrorResponse('Invalid refresh token', 'invalid_grant', 400);
     }
 
     // Revoke old refresh token (prevent reuse)
@@ -158,7 +161,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     return jsonResponse(response);
   }
 
-  return errorResponse('Unsupported grant type', 400);
+  return identityErrorResponse('Unsupported grant type', 'unsupported_grant_type', 400);
 }
 
 // POST /identity/accounts/prelogin

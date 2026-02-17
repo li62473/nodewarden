@@ -7,6 +7,8 @@ import { User, Cipher, Folder, Attachment } from '../types';
 // - Revision date is maintained per user for Bitwarden sync.
 
 export class StorageService {
+  private static attachmentTokenTableReady = false;
+
   constructor(private db: D1Database) {}
 
   /**
@@ -395,6 +397,23 @@ CREATE INDEX IF NOT EXISTS idx_api_rate_window ON api_rate_limits(window_start);
     await this.db.prepare('DELETE FROM folders WHERE id = ? AND user_id = ?').bind(id, userId).run();
   }
 
+  // Clear folder references from all ciphers owned by the user.
+  // Without this, deleting a folder leaves stale folderId values in cipher JSON.
+  async clearFolderFromCiphers(userId: string, folderId: string): Promise<void> {
+    const now = new Date().toISOString();
+    const res = await this.db
+      .prepare('SELECT data FROM ciphers WHERE user_id = ? AND folder_id = ?')
+      .bind(userId, folderId)
+      .all<{ data: string }>();
+
+    for (const row of (res.results || [])) {
+      const cipher = JSON.parse(row.data) as Cipher;
+      cipher.folderId = null;
+      cipher.updatedAt = now;
+      await this.saveCipher(cipher);
+    }
+  }
+
   async getAllFolders(userId: string): Promise<Folder[]> {
     const res = await this.db
       .prepare('SELECT id, user_id, name, created_at, updated_at FROM folders WHERE user_id = ? ORDER BY updated_at DESC')
@@ -578,5 +597,38 @@ CREATE INDEX IF NOT EXISTS idx_api_rate_window ON api_rate_limits(window_start);
       .bind(userId, date)
       .run();
     return date;
+  }
+
+  // --- One-time attachment download tokens ---
+
+  private async ensureUsedAttachmentDownloadTokenTable(): Promise<void> {
+    if (StorageService.attachmentTokenTableReady) return;
+
+    await this.db.prepare(
+      'CREATE TABLE IF NOT EXISTS used_attachment_download_tokens (' +
+      'jti TEXT PRIMARY KEY, ' +
+      'expires_at INTEGER NOT NULL' +
+      ')'
+    ).run();
+
+    StorageService.attachmentTokenTableReady = true;
+  }
+
+  // Marks an attachment download token JTI as consumed.
+  // Returns true only on first use. Reuse returns false.
+  async consumeAttachmentDownloadToken(jti: string, expUnixSeconds: number): Promise<boolean> {
+    await this.ensureUsedAttachmentDownloadTokenTable();
+
+    const nowMs = Date.now();
+    // Best-effort cleanup of expired entries.
+    await this.db.prepare('DELETE FROM used_attachment_download_tokens WHERE expires_at < ?').bind(nowMs).run();
+
+    const expiresAtMs = expUnixSeconds * 1000;
+    const result = await this.db.prepare(
+      'INSERT INTO used_attachment_download_tokens(jti, expires_at) VALUES(?, ?) ' +
+      'ON CONFLICT(jti) DO NOTHING'
+    ).bind(jti, expiresAtMs).run();
+
+    return (result.meta.changes ?? 0) > 0;
   }
 }

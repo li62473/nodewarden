@@ -6,7 +6,7 @@
 // Rate limit configuration
 const CONFIG = {
   // Friendly default: short cooldown instead of long lockouts.
-  LOGIN_MAX_ATTEMPTS: 8,
+  LOGIN_MAX_ATTEMPTS: 5,
   LOGIN_LOCKOUT_MINUTES: 2,
 
   // Write operations only (POST/PUT/DELETE/PATCH) should use this budget.
@@ -113,18 +113,26 @@ export class RateLimitService {
     await this.db.prepare('DELETE FROM login_attempts_ip WHERE ip = ?').bind(key).run();
   }
 
-  async checkApiRateLimit(identifier: string): Promise<{ allowed: boolean; remaining: number; retryAfterSeconds?: number }> {
+  // Atomically consume one write budget unit for the current fixed window.
+  // Uses SQLite UPSERT-with-WHERE so requests at/over limit do not increment.
+  async consumeApiWriteBudget(identifier: string): Promise<{ allowed: boolean; remaining: number; retryAfterSeconds?: number }> {
     const nowSec = Math.floor(Date.now() / 1000);
     const windowStart = nowSec - (nowSec % CONFIG.API_WINDOW_SECONDS);
     const windowEnd = windowStart + CONFIG.API_WINDOW_SECONDS;
 
     const row = await this.db
-      .prepare('SELECT count FROM api_rate_limits WHERE identifier = ? AND window_start = ?')
-      .bind(identifier, windowStart)
+      .prepare(
+        'INSERT INTO api_rate_limits(identifier, window_start, count) VALUES(?, ?, 1) ' +
+        'ON CONFLICT(identifier, window_start) DO UPDATE SET count = count + 1 ' +
+        'WHERE api_rate_limits.count < ? ' +
+        'RETURNING count'
+      )
+      .bind(identifier, windowStart, CONFIG.API_WRITE_REQUESTS_PER_MINUTE)
       .first<{ count: number }>();
 
-    const count = row?.count || 0;
-    if (count >= CONFIG.API_WRITE_REQUESTS_PER_MINUTE) {
+    // No returned row means conflict happened and WHERE prevented the increment:
+    // current count is already at/above the configured limit.
+    if (!row) {
       return {
         allowed: false,
         remaining: 0,
@@ -132,24 +140,8 @@ export class RateLimitService {
       };
     }
 
-    return {
-      allowed: true,
-      remaining: CONFIG.API_WRITE_REQUESTS_PER_MINUTE - count,
-    };
-  }
-
-  async incrementApiCount(identifier: string): Promise<void> {
-    const nowSec = Math.floor(Date.now() / 1000);
-    const windowStart = nowSec - (nowSec % CONFIG.API_WINDOW_SECONDS);
-
-    // Atomic increment via UPSERT.
-    await this.db
-      .prepare(
-        'INSERT INTO api_rate_limits(identifier, window_start, count) VALUES(?, ?, 1) ' +
-        'ON CONFLICT(identifier, window_start) DO UPDATE SET count = count + 1'
-      )
-      .bind(identifier, windowStart)
-      .run();
+    const remaining = Math.max(0, CONFIG.API_WRITE_REQUESTS_PER_MINUTE - row.count);
+    return { allowed: true, remaining };
   }
 }
 

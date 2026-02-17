@@ -99,6 +99,7 @@ export function createRefreshToken(): string {
 export interface FileDownloadClaims {
   cipherId: string;
   attachmentId: string;
+  jti: string;
   exp: number;
 }
 
@@ -114,6 +115,7 @@ export async function createFileDownloadToken(
   const payload: FileDownloadClaims = {
     cipherId,
     attachmentId,
+    jti: createRefreshToken(),
     exp: now + 300, // 5 minutes
   };
 

@@ -6,6 +6,9 @@ import { cipherToResponse } from './ciphers';
 // GET /api/sync
 export async function handleSync(request: Request, env: Env, userId: string): Promise<Response> {
   const storage = new StorageService(env.DB);
+  const url = new URL(request.url);
+  const excludeDomainsParam = url.searchParams.get('excludeDomains');
+  const excludeDomains = excludeDomainsParam !== null && /^(1|true|yes)$/i.test(excludeDomainsParam);
   
   const user = await storage.getUserById(userId);
   if (!user) {
@@ -61,11 +64,13 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
     folders: folderResponses,
     collections: [],
     ciphers: cipherResponses,
-    domains: {
-      equivalentDomains: [],
-      globalEquivalentDomains: [],
-      object: 'domains',
-    },
+    domains: excludeDomains
+      ? null
+      : {
+          equivalentDomains: [],
+          globalEquivalentDomains: [],
+          object: 'domains',
+        },
     policies: [],
     sends: [],
     // PascalCase for desktop/browser clients
@@ -81,7 +86,7 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
         },
         MasterKeyEncryptedUserKey: user.key,
         MasterKeyWrappedUserKey: user.key,
-        Salt: user.email,
+        Salt: user.email.toLowerCase(),
         Object: 'masterPasswordUnlock',
       },
     },
@@ -96,7 +101,7 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
         },
         masterKeyWrappedUserKey: user.key,
         masterKeyEncryptedUserKey: user.key,
-        salt: user.email,
+        salt: user.email.toLowerCase(),
       },
     },
     object: 'sync',

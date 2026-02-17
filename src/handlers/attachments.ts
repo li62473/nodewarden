@@ -234,7 +234,6 @@ export async function handlePublicDownloadAttachment(
   }
 
   const storage = new StorageService(env.DB);
-  
 
   // Verify attachment exists
   const attachment = await storage.getAttachment(attachmentId);
@@ -248,6 +247,11 @@ export async function handlePublicDownloadAttachment(
 
   if (!object) {
     return errorResponse('Attachment file not found', 404);
+  }
+
+  const firstUse = await storage.consumeAttachmentDownloadToken(claims.jti, claims.exp);
+  if (!firstUse) {
+    return errorResponse('Invalid or expired token', 401);
   }
 
   return new Response(object.body, {

@@ -103,6 +103,7 @@ export async function handleDeleteFolder(request: Request, env: Env, userId: str
     return errorResponse('Folder not found', 404);
   }
 
+  await storage.clearFolderFromCiphers(userId, id);
   await storage.deleteFolder(id, userId);
   await storage.updateRevisionDate(userId);
 
