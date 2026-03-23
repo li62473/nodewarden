@@ -79,7 +79,9 @@ export default function VaultPage(props: VaultPageProps) {
   const [fieldLabel, setFieldLabel] = useState('');
   const [fieldValue, setFieldValue] = useState('');
   const [localError, setLocalError] = useState('');
+  const [pendingArchive, setPendingArchive] = useState<Cipher | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Cipher | null>(null);
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveFolderId, setMoveFolderId] = useState('__none__');
@@ -684,6 +686,20 @@ function folderName(id: string | null | undefined): string {
     }
   }
 
+  async function confirmArchiveSelected(): Promise<void> {
+    if (!pendingArchive) return;
+    setBusy(true);
+    try {
+      await props.onArchive(pendingArchive);
+      setPendingArchive(null);
+      if (isMobileLayout && selectedCipherId === pendingArchive.id) {
+        setMobilePanel('list');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function confirmBulkArchive(): Promise<void> {
     const ids = Object.entries(selectedMap)
       .filter(([, selected]) => selected)
@@ -693,6 +709,7 @@ function folderName(id: string | null | undefined): string {
     try {
       await props.onBulkArchive(ids);
       setSelectedMap({});
+      setBulkArchiveOpen(false);
     } finally {
       setBusy(false);
     }
@@ -795,7 +812,7 @@ function folderName(id: string | null | undefined): string {
           onToggleCreateMenu={() => setCreateMenuOpen((open) => !open)}
           onStartCreate={startCreate}
           onBulkRestore={() => void confirmBulkRestore()}
-          onBulkArchive={() => void confirmBulkArchive()}
+          onBulkArchive={() => setBulkArchiveOpen(true)}
           onBulkUnarchive={() => void confirmBulkUnarchive()}
           onOpenMove={() => {
             setMoveFolderId('__none__');
@@ -888,7 +905,7 @@ function folderName(id: string | null | undefined): string {
               attachmentDownloadPercent={props.attachmentDownloadPercent}
               onStartEdit={startEdit}
               onDelete={setPendingDelete}
-              onArchive={props.onArchive}
+              onArchive={(cipher) => setPendingArchive(cipher)}
               onUnarchive={props.onUnarchive}
             />
           )}
@@ -902,6 +919,8 @@ function folderName(id: string | null | undefined): string {
         fieldType={fieldType}
         fieldLabel={fieldLabel}
         fieldValue={fieldValue}
+        archiveConfirmOpen={!!pendingArchive}
+        bulkArchiveOpen={bulkArchiveOpen}
         pendingDeleteOpen={!!pendingDelete}
         bulkDeleteOpen={bulkDeleteOpen}
         sidebarTrashMode={sidebarFilter.kind === 'trash'}
@@ -944,6 +963,10 @@ function folderName(id: string | null | undefined): string {
         onFieldTypeChange={setFieldType}
         onFieldLabelChange={setFieldLabel}
         onFieldValueChange={setFieldValue}
+        onConfirmArchive={() => void confirmArchiveSelected()}
+        onCancelArchive={() => setPendingArchive(null)}
+        onConfirmBulkArchive={() => void confirmBulkArchive()}
+        onCancelBulkArchive={() => setBulkArchiveOpen(false)}
         onConfirmDelete={() => void deleteSelected()}
         onCancelDelete={() => setPendingDelete(null)}
         onConfirmBulkDelete={() => void confirmBulkDelete()}

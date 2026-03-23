@@ -281,6 +281,10 @@ const messages: Record<Locale, Record<string, string>> = {
     txt_delete_item_failed: "Delete item failed",
     txt_delete_permanently: "Delete Permanently",
     txt_archive: "Archive",
+    txt_archive_item: "Archive Item",
+    txt_archive_item_message: "After archiving, this item will be excluded from general search results and autofill suggestions.",
+    txt_archive_selected_items: "Archive Items",
+    txt_archive_selected_items_message: "After archiving, {count} selected items will be excluded from general search results and autofill suggestions.",
     txt_archived: "Archived",
     txt_archive_selected: "Archive",
     txt_item_archived: "Item archived",
@@ -1376,6 +1380,10 @@ zhCNOverrides.txt_import_export_title = '导入导出';
 zhCNOverrides.txt_new_type_header = '新建{type}';
 zhCNOverrides.txt_edit_type_header = '编辑{type}';
 zhCNOverrides.txt_archive = '归档';
+zhCNOverrides.txt_archive_item = '归档项目';
+zhCNOverrides.txt_archive_item_message = '归档后，此项目将被排除在一般搜索结果和自动填充建议之外。';
+zhCNOverrides.txt_archive_selected_items = '归档项目';
+zhCNOverrides.txt_archive_selected_items_message = '归档后，所选的 {count} 个项目将被排除在一般搜索结果和自动填充建议之外。';
 zhCNOverrides.txt_archived = '已归档';
 zhCNOverrides.txt_archive_selected = '归档';
 zhCNOverrides.txt_item_archived = '项目已归档';
